@@ -92,6 +92,20 @@ async def health_check():
         }
     }
 
+@app.get("/debug")
+async def debug_info():
+    """Debug endpoint to check environment"""
+    return {
+        "env_vars": {
+            "GROQ_API_KEY_exists": bool(os.getenv("GROQ_API_KEY")),
+            "GROQ_API_KEY_length": len(os.getenv("GROQ_API_KEY", "")),
+            "GROQ_API_KEY_prefix": (os.getenv("GROQ_API_KEY", "")[:10] + "...") if os.getenv("GROQ_API_KEY") else "None",
+            "PORT": os.getenv("PORT", "Not set"),
+            "all_env_keys": [k for k in os.environ.keys() if 'GROQ' in k.upper()]
+        },
+        "groq_client_status": str(type(groq_client)) if groq_client else "None"
+    }
+
 @app.get("/health")
 async def detailed_health():
     """Detailed health check"""
