@@ -19,11 +19,9 @@ import uvicorn
 # AI imports
 from groq import Groq
 
-# Edge-TTS Voice Generation imports
-import asyncio
-import edge_tts
-from pydub import AudioSegment
-from groq import Groq
+# ElevenLabs Voice Cloning imports
+from elevenlabs import generate, clone, set_api_key
+import requests
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -31,12 +29,13 @@ logger = logging.getLogger(__name__)
 
 # Global variables
 groq_client = None
-voice_model_loaded = True  # Edge-TTS doesn't need loading
+voice_model_loaded = False
+elevenlabs_voice_id = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize models on startup"""
-    global groq_client, voice_model_loaded
+    global groq_client, voice_model_loaded, elevenlabs_voice_id
     
     logger.info("🚀 Starting Superico AI Streamer Production API...")
     
@@ -68,9 +67,45 @@ async def lifespan(app: FastAPI):
         logger.error("❌ GROQ_API_KEY not found!")
         groq_client = None
     
-    # Edge-TTS is ready immediately (no model loading required)
-    logger.info("🎤 Edge-TTS voice synthesis ready!")
-    voice_model_loaded = True
+    # Initialize ElevenLabs Voice Cloning
+    try:
+        elevenlabs_api_key = os.getenv("ELEVENLABS_API_KEY")
+        if elevenlabs_api_key:
+            logger.info("🎤 Initializing ElevenLabs voice cloning...")
+            set_api_key(elevenlabs_api_key)
+            
+            # Check if reference audio exists for voice cloning
+            reference_path = "reference_audio.wav"
+            if os.path.exists(reference_path):
+                logger.info(f"✅ Found reference audio: {reference_path}")
+                
+                # Clone voice from reference audio
+                logger.info("🎯 Cloning Superico's voice...")
+                voice = clone(
+                    name="Superico_Streamer",
+                    description="Superico's cloned voice for streaming",
+                    files=[reference_path]
+                )
+                elevenlabs_voice_id = voice.voice_id
+                voice_model_loaded = True
+                logger.info(f"✅ Voice cloned successfully! Voice ID: {elevenlabs_voice_id}")
+                
+            else:
+                logger.warning(f"⚠️ Reference audio not found at {reference_path}")
+                logger.info("📝 Using default ElevenLabs voice")
+                elevenlabs_voice_id = "pNInz6obpgDQGcFmaJgB"  # Default voice
+                voice_model_loaded = True
+                
+        else:
+            logger.warning("⚠️ ELEVENLABS_API_KEY not found - voice generation disabled")
+            voice_model_loaded = False
+            
+    except Exception as e:
+        logger.error(f"❌ ElevenLabs initialization failed: {e}")
+        logger.error(f"Exception type: {type(e)}")
+        import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
+        voice_model_loaded = False
     
     yield
     
@@ -116,8 +151,8 @@ async def health_check():
         "features": ["Darija", "English", "French", "AI Chat"],
         "models": {
             "llm": "LLaMA-3 via Groq" if groq_client else "Offline",
-            "tts": "Coming soon - deploy first!",
-            "voice_model": "Ready for TTS integration"
+            "tts": "ElevenLabs Voice Cloning" if voice_model_loaded else "Offline",
+            "voice_model": "Superico's Cloned Voice" if elevenlabs_voice_id else "Not loaded"
         }
     }
 
@@ -174,46 +209,32 @@ async def detailed_health():
     }
 
 async def generate_voice(text: str, language: str) -> Optional[str]:
-    """Generate voice audio using Edge-TTS"""
+    """Generate voice audio using ElevenLabs voice cloning"""
     try:
-        if not voice_model_loaded:
+        if not voice_model_loaded or not elevenlabs_voice_id:
             logger.warning("⚠️ Voice model not loaded, skipping audio generation")
             return None
             
-        logger.info(f"🎤 Generating voice for: {text[:50]}...")
+        logger.info(f"🎤 Generating Superico's cloned voice for: {text[:50]}...")
         
         # Preprocess text to fix numbers and pronunciation
         processed_text = preprocess_text_for_speech(text, language)
         
-        # Language/voice mapping for Edge-TTS (using MALE voices)
-        voice_map = {
-            "darija": "ar-SA-HamedNeural",      # Saudi Arabic Male (closest to Moroccan)
-            "english": "en-US-ChristopherNeural",  # US English Male 
-            "french": "fr-FR-AlainNeural",      # French Male
-            "franco-arabic": "ar-SA-HamedNeural"  # Default to Arabic for mixed
-        }
+        # Generate speech using ElevenLabs with cloned voice
+        audio_data = generate(
+            text=processed_text,
+            voice=elevenlabs_voice_id,
+            model="eleven_multilingual_v2"  # Supports multiple languages
+        )
         
-        edge_voice = voice_map.get(language, "en-US-ChristopherNeural")
-        
-        # Generate speech using Edge-TTS
+        # Save audio data to file
         audio_id = str(uuid.uuid4())
-        temp_path = f"/tmp/superico_voice_{audio_id}.mp3"
-        
-        # Create TTS communication
-        communicate = edge_tts.Communicate(processed_text, edge_voice)
-        
-        # Save to file
-        await communicate.save(temp_path)
-        
-        # Convert to WAV for better compatibility
         wav_path = f"/tmp/superico_voice_{audio_id}.wav"
-        audio = AudioSegment.from_mp3(temp_path)
-        audio.export(wav_path, format="wav")
         
-        # Remove MP3 file
-        os.remove(temp_path)
+        with open(wav_path, 'wb') as f:
+            f.write(audio_data)
         
-        logger.info(f"✅ Voice generated: {wav_path}")
+        logger.info(f"✅ Superico's voice generated: {wav_path}")
         return f"/audio/{audio_id}"
         
     except Exception as e:

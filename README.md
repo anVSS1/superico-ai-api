@@ -29,13 +29,22 @@ cloud_api/                 # Deploy this folder to cloud
 ### 1. Environment Variables Required:
 ```
 GROQ_API_KEY=your_groq_api_key_here
+ELEVENLABS_API_KEY=your_elevenlabs_api_key_here
 PORT=8000
 ```
 
-### 2. Get Groq API Key (Free):
+### 2. Get API Keys (Free):
+
+**Groq API Key:**
 1. Go to [console.groq.com](https://console.groq.com)
 2. Create account
 3. Copy API key from dashboard
+
+**ElevenLabs API Key:**
+1. Go to [elevenlabs.io](https://elevenlabs.io)
+2. Sign up for free account
+3. Go to Profile → API Keys
+4. Copy your API key
 
 ### 3. Deploy on Render.com:
 1. Connect this GitHub repo

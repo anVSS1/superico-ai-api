@@ -7,8 +7,5 @@ aiofiles==23.2.1
 requests==2.31.0
 httpx==0.25.0
 
-# Lightweight TTS with voice cloning support
-edge-tts==6.1.12
-pydub==0.25.1
-# Alternative: lighter voice cloning
-# TTS==0.13.3
+# ElevenLabs for voice cloning
+elevenlabs==1.6.2
