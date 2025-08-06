@@ -98,6 +98,26 @@ async def health_check():
 @app.get("/debug")
 async def debug_info():
     """Debug endpoint to check environment"""
+    # Test Groq client creation directly
+    groq_test_result = None
+    groq_error = None
+    try:
+        from groq import Groq
+        groq_key = os.getenv("GROQ_API_KEY")
+        test_client = Groq(api_key=groq_key)
+        groq_test_result = "SUCCESS - Client created"
+        
+        # Try a simple API call
+        try:
+            models = test_client.models.list()
+            groq_test_result += f" - API accessible, {len(models.data)} models available"
+        except Exception as api_e:
+            groq_test_result += f" - Client created but API call failed: {str(api_e)}"
+            
+    except Exception as groq_e:
+        groq_error = str(groq_e)
+        groq_test_result = f"FAILED - {groq_error}"
+    
     return {
         "env_vars": {
             "GROQ_API_KEY_exists": bool(os.getenv("GROQ_API_KEY")),
@@ -106,7 +126,10 @@ async def debug_info():
             "PORT": os.getenv("PORT", "Not set"),
             "all_env_keys": [k for k in os.environ.keys() if 'GROQ' in k.upper()]
         },
-        "groq_client_status": str(type(groq_client)) if groq_client else "None"
+        "groq_client_status": str(type(groq_client)) if groq_client else "None",
+        "groq_test_creation": groq_test_result,
+        "groq_error": groq_error,
+        "groq_version": getattr(__import__('groq'), '__version__', 'unknown')
     }
 
 @app.get("/health")
