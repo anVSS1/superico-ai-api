@@ -6,6 +6,7 @@ import logging
 import re
 from datetime import datetime
 from typing import Optional
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,11 +20,38 @@ from groq import Groq
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# FastAPI app
+# Global variables
+groq_client = None
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Initialize models on startup"""
+    global groq_client
+    
+    logger.info("🚀 Starting Superico AI Streamer Production API...")
+    
+    # Initialize Groq
+    groq_api_key = os.getenv("GROQ_API_KEY")
+    if groq_api_key:
+        try:
+            groq_client = Groq(api_key=groq_api_key)
+            logger.info("✅ Groq LLaMA-3 client ready")
+        except Exception as e:
+            logger.error(f"❌ Groq initialization failed: {e}")
+    else:
+        logger.error("❌ GROQ_API_KEY not found!")
+    
+    yield
+    
+    # Cleanup (if needed)
+    logger.info("🛑 Shutting down Superico AI...")
+
+# FastAPI app with lifespan
 app = FastAPI(
     title="Superico AI Streamer API", 
     version="2.0",
-    description="Trilingual Moroccan AI Streamer with Voice Cloning"
+    description="Trilingual Moroccan AI Streamer with Voice Cloning",
+    lifespan=lifespan
 )
 
 # CORS for web access
@@ -34,9 +62,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Global variables
-groq_client = None
 
 class ChatRequest(BaseModel):
     message: str
@@ -49,21 +74,6 @@ class ChatResponse(BaseModel):
     audio_url: Optional[str] = None
     timestamp: datetime
     personality_mode: str
-
-@app.on_event("startup")
-async def startup_event():
-    """Initialize models on startup"""
-    global groq_client
-    
-    logger.info("🚀 Starting Superico AI Streamer Production API...")
-    
-    # Initialize Groq
-    groq_api_key = os.getenv("GROQ_API_KEY")
-    if groq_api_key:
-        groq_client = Groq(api_key=groq_api_key)
-        logger.info("✅ Groq LLaMA-3 client ready")
-    else:
-        logger.error("❌ GROQ_API_KEY not found!")
 
 @app.get("/")
 async def health_check():
