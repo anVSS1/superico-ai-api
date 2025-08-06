@@ -150,7 +150,7 @@ Be entertaining and authentic to Superico's personality."""
 
     try:
         completion = groq_client.chat.completions.create(
-            model="llama-3.1-70b-versatile",
+            model="llama-3.1-8b-instant",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"{username} says: {message}"}
