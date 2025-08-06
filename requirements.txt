@@ -6,3 +6,10 @@ python-multipart==0.0.6
 aiofiles==23.2.1
 requests==2.31.0
 httpx==0.25.0
+
+# XTTS Voice Generation
+TTS==0.22.0
+torch==2.1.0
+torchaudio==2.1.0
+numpy==1.24.3
+scipy==1.11.4

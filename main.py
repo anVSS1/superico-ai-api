@@ -7,13 +7,20 @@ import re
 from datetime import datetime
 from typing import Optional
 from contextlib import asynccontextmanager
+import tempfile
+import uuid
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import uvicorn
 
 # AI imports
+from groq import Groq
+
+# XTTS Voice Generation imports
+import torch
 from groq import Groq
 
 # Setup logging
@@ -22,11 +29,13 @@ logger = logging.getLogger(__name__)
 
 # Global variables
 groq_client = None
+xtts_model = None
+voice_model_loaded = False
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize models on startup"""
-    global groq_client
+    global groq_client, xtts_model, voice_model_loaded
     
     logger.info("🚀 Starting Superico AI Streamer Production API...")
     
@@ -57,6 +66,38 @@ async def lifespan(app: FastAPI):
     else:
         logger.error("❌ GROQ_API_KEY not found!")
         groq_client = None
+    
+    # Initialize XTTS Voice Model
+    try:
+        logger.info("🎤 Loading XTTS voice model...")
+        
+        # Check if reference audio exists
+        reference_path = "reference_audio.wav"
+        if os.path.exists(reference_path):
+            logger.info(f"✅ Found reference audio: {reference_path}")
+            
+            # Load XTTS model using TTS library
+            from TTS.api import TTS
+            
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            logger.info(f"🔧 Using device: {device}")
+            
+            # Initialize XTTS v2 model
+            xtts_model = TTS("tts_models/multilingual/multi-dataset/xtts_v2", gpu=(device == "cuda"))
+            
+            voice_model_loaded = True
+            logger.info("✅ XTTS voice model loaded successfully!")
+            
+        else:
+            logger.warning(f"⚠️ Reference audio not found at {reference_path}")
+            logger.info("📝 Voice generation will be disabled")
+            
+    except Exception as e:
+        logger.error(f"❌ XTTS initialization failed: {e}")
+        logger.error(f"Exception type: {type(e)}")
+        import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
+        voice_model_loaded = False
     
     yield
     
@@ -153,10 +194,56 @@ async def detailed_health():
     return {
         "status": "healthy",
         "groq_connected": bool(groq_client),
-        "voice_model_loaded": False,  # Will be True when TTS is added
+        "voice_model_loaded": voice_model_loaded,
         "supported_languages": ["darija", "english", "french", "franco-arabic"],
         "timestamp": datetime.now().isoformat()
     }
+
+async def generate_voice(text: str, language: str) -> Optional[str]:
+    """Generate voice audio using XTTS"""
+    try:
+        if not voice_model_loaded or not xtts_model:
+            logger.warning("⚠️ Voice model not loaded, skipping audio generation")
+            return None
+            
+        logger.info(f"🎤 Generating voice for: {text[:50]}...")
+        
+        # Language mapping for XTTS
+        lang_map = {
+            "darija": "ar",     # Arabic for Darija
+            "english": "en", 
+            "french": "fr",
+            "franco-arabic": "ar"  # Default to Arabic for mixed
+        }
+        
+        xtts_lang = lang_map.get(language, "en")
+        
+        # Load reference audio
+        reference_path = "reference_audio.wav"
+        if not os.path.exists(reference_path):
+            logger.error(f"❌ Reference audio not found: {reference_path}")
+            return None
+            
+        # Generate speech using TTS API
+        audio_id = str(uuid.uuid4())
+        temp_path = f"/tmp/superico_voice_{audio_id}.wav"
+        
+        # Use TTS to clone voice and generate speech
+        xtts_model.tts_to_file(
+            text=text,
+            file_path=temp_path,
+            speaker_wav=reference_path,
+            language=xtts_lang
+        )
+        
+        logger.info(f"✅ Voice generated: {temp_path}")
+        return f"/audio/{audio_id}"
+        
+    except Exception as e:
+        logger.error(f"❌ Voice generation failed: {e}")
+        import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
+        return None
 
 def detect_language(text: str) -> str:
     """Detect language of input text"""
@@ -251,10 +338,13 @@ async def chat_with_superico(request: ChatRequest):
             request.stream_context
         )
         
+        # Generate voice audio
+        audio_url = await generate_voice(ai_response, detected_lang)
+        
         response = ChatResponse(
             response=ai_response,
             detected_language=detected_lang,
-            audio_url=None,  # Will add TTS later
+            audio_url=audio_url,
             timestamp=datetime.now(),
             personality_mode="superico_streamer"
         )
@@ -264,6 +354,23 @@ async def chat_with_superico(request: ChatRequest):
         
     except Exception as e:
         logger.error(f"❌ Chat error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/audio/{audio_id}")
+async def serve_audio(audio_id: str):
+    """Serve generated audio files"""
+    try:
+        audio_path = f"/tmp/superico_voice_{audio_id}.wav"
+        if os.path.exists(audio_path):
+            return FileResponse(
+                audio_path,
+                media_type="audio/wav",
+                filename=f"superico_{audio_id}.wav"
+            )
+        else:
+            raise HTTPException(status_code=404, detail="Audio file not found")
+    except Exception as e:
+        logger.error(f"❌ Audio serving error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # Run server
