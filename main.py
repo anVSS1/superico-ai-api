@@ -32,7 +32,9 @@ async def lifespan(app: FastAPI):
     
     # Initialize Groq
     groq_api_key = os.getenv("GROQ_API_KEY")
+    logger.info(f"API Key found: {'Yes' if groq_api_key else 'No'}")
     if groq_api_key:
+        logger.info(f"API Key starts with: {groq_api_key[:10]}...")
         try:
             groq_client = Groq(api_key=groq_api_key)
             logger.info("✅ Groq LLaMA-3 client ready")
