@@ -37,9 +37,12 @@ async def lifespan(app: FastAPI):
         logger.info(f"API Key starts with: {groq_api_key[:10]}...")
         try:
             groq_client = Groq(api_key=groq_api_key)
-            logger.info("✅ Groq LLaMA-3 client ready")
+            logger.info("✅ Groq client initialized successfully")
         except Exception as e:
             logger.error(f"❌ Groq initialization failed: {e}")
+            logger.error(f"Exception type: {type(e)}")
+            import traceback
+            logger.error(f"Full traceback: {traceback.format_exc()}")
     else:
         logger.error("❌ GROQ_API_KEY not found!")
     
