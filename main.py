@@ -164,6 +164,7 @@ async def debug_info():
 @app.get("/health")
 async def detailed_health():
     """Detailed health check"""
+    global voice_model_loaded
     return {
         "status": "healthy",
         "groq_connected": bool(groq_client),
@@ -181,22 +182,25 @@ async def generate_voice(text: str, language: str) -> Optional[str]:
             
         logger.info(f"🎤 Generating voice for: {text[:50]}...")
         
-        # Language/voice mapping for Edge-TTS
+        # Preprocess text to fix numbers and pronunciation
+        processed_text = preprocess_text_for_speech(text, language)
+        
+        # Language/voice mapping for Edge-TTS (using MALE voices)
         voice_map = {
-            "darija": "ar-EG-SalmaNeural",      # Egyptian Arabic (closest to Darija)
-            "english": "en-US-AriaNeural",      # US English
-            "french": "fr-FR-DeniseNeural",     # French
-            "franco-arabic": "ar-EG-SalmaNeural"  # Default to Arabic for mixed
+            "darija": "ar-SA-HamedNeural",      # Saudi Arabic Male (closest to Moroccan)
+            "english": "en-US-ChristopherNeural",  # US English Male 
+            "french": "fr-FR-AlainNeural",      # French Male
+            "franco-arabic": "ar-SA-HamedNeural"  # Default to Arabic for mixed
         }
         
-        edge_voice = voice_map.get(language, "en-US-AriaNeural")
+        edge_voice = voice_map.get(language, "en-US-ChristopherNeural")
         
         # Generate speech using Edge-TTS
         audio_id = str(uuid.uuid4())
         temp_path = f"/tmp/superico_voice_{audio_id}.mp3"
         
         # Create TTS communication
-        communicate = edge_tts.Communicate(text, edge_voice)
+        communicate = edge_tts.Communicate(processed_text, edge_voice)
         
         # Save to file
         await communicate.save(temp_path)
@@ -217,6 +221,53 @@ async def generate_voice(text: str, language: str) -> Optional[str]:
         import traceback
         logger.error(f"Full traceback: {traceback.format_exc()}")
         return None
+
+def preprocess_text_for_speech(text: str, language: str) -> str:
+    """Preprocess text to improve speech synthesis"""
+    import re
+    
+    # Remove or replace problematic characters
+    processed = text
+    
+    if language == "darija" or language == "franco-arabic":
+        # Convert Arabic numerals to spoken form in Darija
+        processed = re.sub(r'\b(\d+)\b', lambda m: convert_number_to_darija(int(m.group(1))), processed)
+        
+        # Fix common Darija pronunciation issues
+        processed = processed.replace("3", "ع")  # Replace 3 with proper Arabic letter
+        processed = processed.replace("7", "ح")  # Replace 7 with proper Arabic letter
+        processed = processed.replace("9", "ق")  # Replace 9 with proper Arabic letter
+        
+    elif language == "english":
+        # Keep numbers as digits for English (reads them properly)
+        pass
+        
+    elif language == "french":
+        # Keep numbers as digits for French
+        pass
+    
+    return processed
+
+def convert_number_to_darija(num: int) -> str:
+    """Convert numbers to Darija words"""
+    darija_numbers = {
+        0: "صفر", 1: "واحد", 2: "جوج", 3: "تلاتة", 4: "ربعة", 5: "خمسة",
+        6: "ستة", 7: "سبعة", 8: "تمنية", 9: "تسعة", 10: "عشرة",
+        11: "حداش", 12: "طناش", 13: "تلطاش", 14: "ربعطاش", 15: "خمسطاش",
+        16: "سطاش", 17: "سبعطاش", 18: "تمنطاش", 19: "تسعطاش", 20: "عشرين"
+    }
+    
+    if num in darija_numbers:
+        return darija_numbers[num]
+    elif num < 100:
+        tens = (num // 10) * 10
+        ones = num % 10
+        if tens == 20:
+            return f"عشرين و {darija_numbers[ones]}" if ones > 0 else "عشرين"
+        else:
+            return str(num)  # Fallback to digit for complex numbers
+    else:
+        return str(num)  # Fallback to digit for large numbers
 
 def detect_language(text: str) -> str:
     """Detect language of input text"""
