@@ -19,8 +19,10 @@ import uvicorn
 # AI imports
 from groq import Groq
 
-# XTTS Voice Generation imports
-import torch
+# Edge-TTS Voice Generation imports
+import asyncio
+import edge_tts
+from pydub import AudioSegment
 from groq import Groq
 
 # Setup logging
@@ -29,13 +31,12 @@ logger = logging.getLogger(__name__)
 
 # Global variables
 groq_client = None
-xtts_model = None
-voice_model_loaded = False
+voice_model_loaded = True  # Edge-TTS doesn't need loading
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize models on startup"""
-    global groq_client, xtts_model, voice_model_loaded
+    global groq_client, voice_model_loaded
     
     logger.info("🚀 Starting Superico AI Streamer Production API...")
     
@@ -67,37 +68,9 @@ async def lifespan(app: FastAPI):
         logger.error("❌ GROQ_API_KEY not found!")
         groq_client = None
     
-    # Initialize XTTS Voice Model
-    try:
-        logger.info("🎤 Loading XTTS voice model...")
-        
-        # Check if reference audio exists
-        reference_path = "reference_audio.wav"
-        if os.path.exists(reference_path):
-            logger.info(f"✅ Found reference audio: {reference_path}")
-            
-            # Load XTTS model using TTS library
-            from TTS.api import TTS
-            
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-            logger.info(f"🔧 Using device: {device}")
-            
-            # Initialize XTTS v2 model
-            xtts_model = TTS("tts_models/multilingual/multi-dataset/xtts_v2", gpu=(device == "cuda"))
-            
-            voice_model_loaded = True
-            logger.info("✅ XTTS voice model loaded successfully!")
-            
-        else:
-            logger.warning(f"⚠️ Reference audio not found at {reference_path}")
-            logger.info("📝 Voice generation will be disabled")
-            
-    except Exception as e:
-        logger.error(f"❌ XTTS initialization failed: {e}")
-        logger.error(f"Exception type: {type(e)}")
-        import traceback
-        logger.error(f"Full traceback: {traceback.format_exc()}")
-        voice_model_loaded = False
+    # Edge-TTS is ready immediately (no model loading required)
+    logger.info("🎤 Edge-TTS voice synthesis ready!")
+    voice_model_loaded = True
     
     yield
     
@@ -200,43 +173,43 @@ async def detailed_health():
     }
 
 async def generate_voice(text: str, language: str) -> Optional[str]:
-    """Generate voice audio using XTTS"""
+    """Generate voice audio using Edge-TTS"""
     try:
-        if not voice_model_loaded or not xtts_model:
+        if not voice_model_loaded:
             logger.warning("⚠️ Voice model not loaded, skipping audio generation")
             return None
             
         logger.info(f"🎤 Generating voice for: {text[:50]}...")
         
-        # Language mapping for XTTS
-        lang_map = {
-            "darija": "ar",     # Arabic for Darija
-            "english": "en", 
-            "french": "fr",
-            "franco-arabic": "ar"  # Default to Arabic for mixed
+        # Language/voice mapping for Edge-TTS
+        voice_map = {
+            "darija": "ar-EG-SalmaNeural",      # Egyptian Arabic (closest to Darija)
+            "english": "en-US-AriaNeural",      # US English
+            "french": "fr-FR-DeniseNeural",     # French
+            "franco-arabic": "ar-EG-SalmaNeural"  # Default to Arabic for mixed
         }
         
-        xtts_lang = lang_map.get(language, "en")
+        edge_voice = voice_map.get(language, "en-US-AriaNeural")
         
-        # Load reference audio
-        reference_path = "reference_audio.wav"
-        if not os.path.exists(reference_path):
-            logger.error(f"❌ Reference audio not found: {reference_path}")
-            return None
-            
-        # Generate speech using TTS API
+        # Generate speech using Edge-TTS
         audio_id = str(uuid.uuid4())
-        temp_path = f"/tmp/superico_voice_{audio_id}.wav"
+        temp_path = f"/tmp/superico_voice_{audio_id}.mp3"
         
-        # Use TTS to clone voice and generate speech
-        xtts_model.tts_to_file(
-            text=text,
-            file_path=temp_path,
-            speaker_wav=reference_path,
-            language=xtts_lang
-        )
+        # Create TTS communication
+        communicate = edge_tts.Communicate(text, edge_voice)
         
-        logger.info(f"✅ Voice generated: {temp_path}")
+        # Save to file
+        await communicate.save(temp_path)
+        
+        # Convert to WAV for better compatibility
+        wav_path = f"/tmp/superico_voice_{audio_id}.wav"
+        audio = AudioSegment.from_mp3(temp_path)
+        audio.export(wav_path, format="wav")
+        
+        # Remove MP3 file
+        os.remove(temp_path)
+        
+        logger.info(f"✅ Voice generated: {wav_path}")
         return f"/audio/{audio_id}"
         
     except Exception as e:

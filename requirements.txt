@@ -7,7 +7,6 @@ aiofiles==23.2.1
 requests==2.31.0
 httpx==0.25.0
 
-# XTTS Voice Generation - Let pip resolve versions automatically
-TTS>=0.20.0
-torch>=2.0.0
-torchaudio>=2.0.0
+# Lightweight TTS instead of heavy XTTS
+edge-tts==6.1.12
+pydub==0.25.1
