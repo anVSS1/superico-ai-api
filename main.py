@@ -36,15 +36,20 @@ async def lifespan(app: FastAPI):
     if groq_api_key:
         logger.info(f"API Key starts with: {groq_api_key[:10]}...")
         try:
-            groq_client = Groq(api_key=groq_api_key)
+            # Clean Groq client initialization
+            groq_client = Groq(
+                api_key=groq_api_key
+            )
             logger.info("✅ Groq client initialized successfully")
         except Exception as e:
             logger.error(f"❌ Groq initialization failed: {e}")
             logger.error(f"Exception type: {type(e)}")
             import traceback
             logger.error(f"Full traceback: {traceback.format_exc()}")
+            groq_client = None
     else:
         logger.error("❌ GROQ_API_KEY not found!")
+        groq_client = None
     
     yield
     
@@ -104,7 +109,10 @@ async def debug_info():
     try:
         from groq import Groq
         groq_key = os.getenv("GROQ_API_KEY")
-        test_client = Groq(api_key=groq_key)
+        # Use exact same initialization as lifespan
+        test_client = Groq(
+            api_key=groq_key
+        )
         groq_test_result = "SUCCESS - Client created"
         
         # Try a simple API call
