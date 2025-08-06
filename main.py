@@ -36,6 +36,13 @@ async def lifespan(app: FastAPI):
     if groq_api_key:
         logger.info(f"API Key starts with: {groq_api_key[:10]}...")
         try:
+            # Clear any proxy-related env vars that might interfere
+            proxy_vars = ['http_proxy', 'https_proxy', 'HTTP_PROXY', 'HTTPS_PROXY']
+            for var in proxy_vars:
+                if var in os.environ:
+                    logger.info(f"Removing proxy env var: {var}")
+                    del os.environ[var]
+            
             # Clean Groq client initialization
             groq_client = Groq(
                 api_key=groq_api_key
